@@ -42,19 +42,21 @@ def extract_text_from_bytes(file_bytes, filename):
         text = f"[Ошибка извлечения: {e}]"
     return text
 
-def download_tender_files(files_url):
-    """Скачивает все файлы тендера"""
+def download_tender_files(entity_id):
+    """Скачивает все файлы тендера по entityId"""
+    files_url = f"https://tenderland.ru/Api/File/GetAll?entityId={entity_id}&entityTypeId=1&apiKey={TENDERLAND_API_KEY}"
     all_text = ""
     
-    # Получаем список файлов
     try:
         response = requests.get(files_url, timeout=30)
         files_data = response.json()
+        print(f"📁 Получен список файлов: {len(files_data) if isinstance(files_data, list) else 0}")
     except Exception as e:
         print(f"❌ Ошибка получения списка файлов: {e}")
         return ""
     
     if not isinstance(files_data, list):
+        print(f"❌ Неверный формат списка файлов")
         return ""
     
     for file_info in files_data:
@@ -79,7 +81,6 @@ def download_tender_files(files_url):
 def send_to_gptunnel(tender_info, docs_text):
     """Отправляет данные в GPTunnel"""
     
-    # Создаём thread
     headers = {"Authorization": f"Bearer {GPTUNNEL_API_KEY}", "Content-Type": "application/json"}
     
     try:
@@ -90,16 +91,17 @@ def send_to_gptunnel(tender_info, docs_text):
         print(f"❌ Ошибка создания thread: {e}")
         return
     
-    # Формируем сообщение
-    message = f"""ТЕНДЕР: {tender_info.get('name')}
-НОМЕР: {tender_info.get('regNumber')}
-ЗАКАЗЧИК: {tender_info.get('customers', [{}])[0].get('lotCustomerShortName', 'Не указан')}
-НАЧАЛЬНАЯ ЦЕНА: {tender_info.get('beginPrice')} руб.
+    # Обрезаем текст если слишком длинный
+    if len(docs_text) > 50000:
+        docs_text = docs_text[:50000] + "... [обрезано]"
+    
+    message = f"""ТЕНДЕР: {tender_info.get('name', 'Не указано')}
+НОМЕР: {tender_info.get('regNumber', 'Не указан')}
+ЦЕНА: {tender_info.get('beginPrice', 'Не указана')} руб.
 
 ДОКУМЕНТАЦИЯ:
-{docs_text[:50000]}"""  # Ограничиваем длину
+{docs_text}"""
     
-    # Отправляем сообщение
     try:
         msg_payload = {"role": "user", "content": message}
         requests.post(f"{GPTUNNEL_API_URL}/threads/{thread_id}/messages", headers=headers, json=msg_payload, timeout=15)
@@ -108,7 +110,6 @@ def send_to_gptunnel(tender_info, docs_text):
         print(f"❌ Ошибка отправки: {e}")
         return
     
-    # Запускаем ассистента
     try:
         run_payload = {"assistant_id": ASSISTANT_ID}
         requests.post(f"{GPTUNNEL_API_URL}/threads/{thread_id}/runs", headers=headers, json=run_payload, timeout=15)
@@ -116,23 +117,39 @@ def send_to_gptunnel(tender_info, docs_text):
     except Exception as e:
         print(f"❌ Ошибка запуска: {e}")
 
-def process_tender(tender_data):
-    """Обрабатывает один тендер"""
-    tender = tender_data.get('tender', {})
-    reg_number = tender.get('regNumber')
-    name = tender.get('name')
+def process_single_tender(data):
+    """Обрабатывает один тендер (новый формат)"""
+    
+    # Выводим структуру для отладки
+    print(f"🔍 Ключи данных: {list(data.keys())}")
+    
+    # Пробуем найти тендер в разных местах
+    tender = data.get('tender', {})
+    if not tender:
+        tender = data
+    
+    reg_number = tender.get('regNumber') or tender.get('number') or data.get('tenderId')
+    name = tender.get('name') or tender.get('title')
+    entity_id = tender.get('entityId') or data.get('entityId') or data.get('id')
     files_url = tender.get('files')
     
-    print(f"\n📋 Тендер: {reg_number}")
-    print(f"📌 {name}")
+    print(f"📋 regNumber: {reg_number}")
+    print(f"📌 name: {name}")
+    print(f"🆔 entityId: {entity_id}")
+    print(f"📁 files: {files_url}")
     
     if files_url:
         print(f"📁 Скачивание документации...")
-        docs_text = download_tender_files(files_url)
+        docs_text = download_tender_files(entity_id) if entity_id else ""
         
         if docs_text:
             print(f"📄 Текст получен, {len(docs_text)} символов")
-            send_to_gptunnel(tender, docs_text)
+            tender_info = {
+                'name': name,
+                'regNumber': reg_number,
+                'beginPrice': tender.get('beginPrice')
+            }
+            send_to_gptunnel(tender_info, docs_text)
         else:
             print(f"❌ Документация не получена")
     else:
@@ -142,11 +159,15 @@ def process_in_background(data):
     """Фоновая обработка"""
     time.sleep(1)
     
+    print(f"🔍 Тип данных: {type(data)}")
+    
     if isinstance(data, list):
-        for item in data[:3]:  # Обрабатываем только первые 3 тендера для теста
-            process_tender(item)
+        print(f"📋 Обработка списка из {len(data)} элементов")
+        for item in data[:3]:  # Только первые 3 для теста
+            process_single_tender(item)
     else:
-        process_tender(data)
+        print(f"📋 Обработка одного элемента")
+        process_single_tender(data)
     
     print("\n✅ Обработка завершена")
 
@@ -160,7 +181,7 @@ def webhook():
         return jsonify({"статус": "ок"}), 200
     
     data = request.json
-    print(f"📦 Получено тендеров: {len(data) if isinstance(data, list) else 1}")
+    print(f"📦 Данные получены")
     
     thread = threading.Thread(target=process_in_background, args=(data,))
     thread.start()
