@@ -117,43 +117,34 @@ def send_to_gptunnel(tender_info, docs_text):
     except Exception as e:
         print(f"❌ Ошибка запуска: {e}")
 
-def process_single_tender(data):
-    """Обрабатывает один тендер (новый формат)"""
+def process_in_background(data):
+    """Фоновая обработка"""
     
-    # Выводим структуру для отладки
-    print(f"🔍 Ключи данных: {list(data.keys())}")
+    print(f"🔍 Тип данных: {type(data)}")
     
-    # Пробуем найти тендер в разных местах
-    tender = data.get('tender', {})
-    if not tender:
-        tender = data
+    # Новый формат: данные внутри items
+    items = data.get('items', [])
     
-    reg_number = tender.get('regNumber') or tender.get('number') or data.get('tenderId')
-    name = tender.get('name') or tender.get('title')
-    entity_id = tender.get('entityId') or data.get('entityId') or data.get('id')
-    files_url = tender.get('files')
-    
-    print(f"📋 regNumber: {reg_number}")
-    print(f"📌 name: {name}")
-    print(f"🆔 entityId: {entity_id}")
-    print(f"📁 files: {files_url}")
-    
-    if files_url:
-        print(f"📁 Скачивание документации...")
-        docs_text = download_tender_files(entity_id) if entity_id else ""
-        
-        if docs_text:
-            print(f"📄 Текст получен, {len(docs_text)} символов")
-            tender_info = {
-                'name': name,
-                'regNumber': reg_number,
-                'beginPrice': tender.get('beginPrice')
-            }
-            send_to_gptunnel(tender_info, docs_text)
-        else:
-            print(f"❌ Документация не получена")
+    if items:
+        print(f"📋 Обработка {len(items)} тендеров из поля 'items'")
+        for item in items[:3]:  # Первые 3 для теста
+            tender = item.get('tender', {})
+            reg_number = tender.get('regNumber')
+            name = tender.get('name')
+            files_url = tender.get('files')
+            entity_id = tender.get('entityId')
+            
+            print(f"📋 regNumber: {reg_number}")
+            print(f"📌 name: {name}")
+            print(f"📁 files: {files_url}")
+            
+            if files_url:
+                print(f"📁 Скачивание документации...")
+                # Здесь будет скачивание
     else:
-        print(f"❌ Нет ссылки на файлы")
+        print(f"❌ Поле 'items' не найдено")
+    
+    print("\n✅ Обработка завершена")
 
 def process_in_background(data):
     """Фоновая обработка"""
