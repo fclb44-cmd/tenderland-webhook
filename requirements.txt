@@ -2,6 +2,6 @@ flask
 gunicorn
 requests
 pandas
-PyPDF2
+pypdf2
 python-docx
 openpyxl
