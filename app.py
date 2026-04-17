@@ -183,8 +183,8 @@ def webhook():
     data = request.json
     print(f"📦 Данные получены")
     
-    thread = threading.Thread(target=process_in_background, args=(data,))
-    thread.start()
+        # Обрабатываем синхронно (без потока)
+    process_in_background(data)
     
     return jsonify({"статус": "ок"}), 200
 
