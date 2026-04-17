@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify
 import json
 import requests
 import io
-import time
 from PyPDF2 import PdfReader
 from docx import Document
 import pandas as pd
@@ -16,7 +15,6 @@ ASSISTANT_ID = "ai3834382"
 GPTUNNEL_API_URL = "https://gptunnel.ru/v1"
 
 def extract_text(file_bytes, filename):
-    """Извлекает текст из PDF, DOCX, XLSX"""
     text = ""
     try:
         if filename.lower().endswith('.pdf'):
@@ -33,20 +31,26 @@ def extract_text(file_bytes, filename):
             with io.BytesIO(file_bytes) as f:
                 df_dict = pd.read_excel(f, sheet_name=None)
                 for sheet_name, df in df_dict.items():
-                    text += f"--- Лист: {sheet_name} ---\n{df.to_string()}\n\n"
+                    text += f"--- {sheet_name} ---\n{df.to_string()}\n\n"
     except Exception as e:
         text = f"[Ошибка: {e}]"
     return text
 
 def download_files(files_url):
-    """Скачивает все файлы по ссылке"""
     all_text = ""
     try:
-        response = requests.get(files_url, timeout=30)
-        files_list = response.json()
+        headers = {"Accept": "application/json"}
+        response = requests.get(files_url, headers=headers, timeout=30)
+        data = response.json()
+        
+        if not data.get('Success', True):
+            print(f"  ⚠️ API ответ: {data.get('Description')}")
+            return ""
+        
+        files_list = data if isinstance(data, list) else data.get('Files', [])
         print(f"  📁 Файлов: {len(files_list)}")
         
-        for f in files_list[:5]:  # Максимум 5 файлов
+        for f in files_list[:3]:  # Только 3 файла
             file_name = f.get('FileName', 'file')
             file_url = f.get('Url')
             if file_url:
@@ -59,32 +63,24 @@ def download_files(files_url):
     return all_text
 
 def send_to_assistant(tender, docs_text):
-    """Отправляет в GPTunnel"""
     headers = {"Authorization": f"Bearer {GPTUNNEL_API_KEY}", "Content-Type": "application/json"}
-    
-    # Создаём thread
     try:
         r = requests.post(f"{GPTUNNEL_API_URL}/threads", headers=headers, json={}, timeout=15)
         thread_id = r.json().get('id')
         print(f"  🧵 Thread: {thread_id}")
-    except:
-        return
-    
-    # Сообщение
-    msg = f"""ТЕНДЕР № {tender.get('regNumber')}
+        
+        msg = f"""ТЕНДЕР № {tender.get('regNumber')}
 {tender.get('name')}
-Начальная цена: {tender.get('beginPrice')} руб.
+Цена: {tender.get('beginPrice')} руб.
 
 ДОКУМЕНТАЦИЯ:
 {docs_text[:30000]}"""
-    
-    # Отправляем
-    try:
+        
         requests.post(f"{GPTUNNEL_API_URL}/threads/{thread_id}/messages", headers=headers, json={"role": "user", "content": msg}, timeout=15)
         requests.post(f"{GPTUNNEL_API_URL}/threads/{thread_id}/runs", headers=headers, json={"assistant_id": ASSISTANT_ID}, timeout=15)
-        print(f"  ✅ Отправлено ассистенту")
+        print(f"  ✅ Отправлено")
     except Exception as e:
-        print(f"  ❌ Ошибка отправки: {e}")
+        print(f"  ❌ Ошибка GPTunnel: {e}")
 
 @app.route('/tenderland-webhook', methods=['POST'])
 def webhook():
@@ -95,12 +91,14 @@ def webhook():
     items = data.get('items', [])
     print(f"📦 Тендеров: {len(items)}")
     
-    for i, item in enumerate(items[:2]):  # Обрабатываем 2 тендера для теста
+    # Обрабатываем ТОЛЬКО ПЕРВЫЙ тендер (экономим лимит API)
+    if items:
+        item = items[0]
         tender = item.get('tender', {})
         files_url = tender.get('files')
         
-        print(f"\n📋 {i+1}. {tender.get('regNumber')}")
-        print(f"   {tender.get('name')[:50]}...")
+        print(f"\n📋 {tender.get('regNumber')}")
+        print(f"   {tender.get('name')[:60]}...")
         
         if files_url:
             print(f"   📁 Скачивание...")
