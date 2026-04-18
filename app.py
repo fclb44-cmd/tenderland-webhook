@@ -2,14 +2,13 @@ from flask import Flask, request, jsonify
 import json
 import requests
 import io
-import time
+import zipfile
 from PyPDF2 import PdfReader
 from docx import Document
 import pandas as pd
 
 app = Flask(__name__)
 
-# ✅ ПРАВИЛЬНЫЕ КЛЮЧИ
 TENDERLAND_API_KEY = "shds-AKUw2n4Yd07oKft2HPxY3mGLZyd"
 GPTUNNEL_API_KEY = "f6290ba7-3284-46ea-bbe2-5999526a06f6"
 ASSISTANT_ID = "ai3834382"
@@ -41,30 +40,26 @@ def download_files(files_url):
     all_text = ""
     try:
         print(f"  🔗 URL: {files_url}")
-        response = requests.get(files_url, timeout=30)
+        response = requests.get(files_url, timeout=60)
         print(f"  📡 Статус: {response.status_code}")
-        print(f"  📄 Ответ (первые 300 симв): {response.text[:300]}")
         
-        try:
-            files_list = response.json()
-        except Exception as e:
-            print(f"  ❌ Ответ не JSON: {e}")
+        # Проверяем, ZIP ли это
+        if response.content[:2] == b'PK':
+            print(f"  📦 Это ZIP-архив, распаковываем...")
+            with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+                file_list = z.namelist()
+                print(f"  📁 Файлов в архиве: {len(file_list)}")
+                
+                for file_name in file_list[:10]:  # Максимум 10 файлов
+                    print(f"  📥 {file_name}")
+                    with z.open(file_name) as f:
+                        file_bytes = f.read()
+                        all_text += f"\n--- {file_name} ---\n"
+                        all_text += extract_text(file_bytes, file_name)
+        else:
+            print(f"  ❌ Ответ не ZIP. Первые 2 байта: {response.content[:2]}")
             return ""
-        
-        if not isinstance(files_list, list):
-            print(f"  ❌ Ответ не список: {type(files_list)}")
-            return ""
-        
-        print(f"  📁 Файлов: {len(files_list)}")
-        
-        for f in files_list[:5]:
-            file_name = f.get('FileName', 'file')
-            file_url = f.get('Url')
-            if file_url:
-                print(f"  📥 {file_name}")
-                resp = requests.get(file_url, timeout=60)
-                all_text += f"\n--- {file_name} ---\n"
-                all_text += extract_text(resp.content, file_name)
+            
     except Exception as e:
         print(f"  ❌ Ошибка: {e}")
     return all_text
@@ -85,7 +80,7 @@ def send_to_assistant(tender, docs_text):
         
         requests.post(f"{GPTUNNEL_API_URL}/threads/{thread_id}/messages", headers=headers, json={"role": "user", "content": msg}, timeout=15)
         requests.post(f"{GPTUNNEL_API_URL}/threads/{thread_id}/runs", headers=headers, json={"assistant_id": ASSISTANT_ID}, timeout=15)
-        print(f"  ✅ Отправлено")
+        print(f"  ✅ Отправлено в GPTunnel")
     except Exception as e:
         print(f"  ❌ Ошибка GPTunnel: {e}")
 
