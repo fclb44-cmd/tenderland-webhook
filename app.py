@@ -37,30 +37,22 @@ def extract_text(file_bytes, filename):
     return text
 
 def download_files(files_url):
+    """Скачивает все файлы по ссылке"""
     all_text = ""
     try:
-        headers = {"Accept": "application/json"}
-        response = requests.get(files_url, headers=headers, timeout=30)
-        data = response.json()
+        print(f"  🔗 URL: {files_url}")
+        response = requests.get(files_url, timeout=30)
+        print(f"  📡 Статус: {response.status_code}")
+        print(f"  📄 Ответ (первые 500 символов): {response.text[:500]}")
         
-        if not data.get('Success', True):
-            print(f"  ⚠️ API ответ: {data.get('Description')}")
+        # Пробуем распарсить JSON
+        try:
+            files_list = response.json()
+        except:
+            print(f"  ❌ Ответ не JSON. Тип контента: {response.headers.get('content-type')}")
             return ""
         
-        files_list = data if isinstance(data, list) else data.get('Files', [])
-        print(f"  📁 Файлов: {len(files_list)}")
-        
-        for f in files_list[:3]:  # Только 3 файла
-            file_name = f.get('FileName', 'file')
-            file_url = f.get('Url')
-            if file_url:
-                print(f"  📥 {file_name}")
-                resp = requests.get(file_url, timeout=60)
-                all_text += f"\n--- {file_name} ---\n"
-                all_text += extract_text(resp.content, file_name)
-    except Exception as e:
-        print(f"  ❌ Ошибка: {e}")
-    return all_text
+        print(f"  📁 Файлов в списке: {len(files_list) if isinstance(files_list, list) else 'не список'}")
 
 def send_to_assistant(tender, docs_text):
     headers = {"Authorization": f"Bearer {GPTUNNEL_API_KEY}", "Content-Type": "application/json"}
