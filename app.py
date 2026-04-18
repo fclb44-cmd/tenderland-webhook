@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 TENDERLAND_API_KEY = "shds-AKUw2n4Yd07oKft2HPxY3mGLZyd"
 GPTUNNEL_API_KEY = "f6290ba7-3284-46ea-bbe2-5999526a06f6"
-ASSISTANT_ID = "@ai3834382"  # ← ДОБАВЛЕН @
+ASSISTANT_ID = "@ai3834382"
 GPTUNNEL_API_URL = "https://gptunnel.ru/v1"
 
 def extract_text(file_bytes, filename):
@@ -43,14 +43,13 @@ def download_files(files_url):
         response = requests.get(files_url, timeout=60)
         print(f"  📡 Статус: {response.status_code}")
         
-        # Проверяем, ZIP ли это
         if response.content[:2] == b'PK':
             print(f"  📦 Это ZIP-архив, распаковываем...")
             with zipfile.ZipFile(io.BytesIO(response.content)) as z:
                 file_list = z.namelist()
                 print(f"  📁 Файлов в архиве: {len(file_list)}")
                 
-                for file_name in file_list[:10]:  # Максимум 10 файлов
+                for file_name in file_list[:10]:
                     print(f"  📥 {file_name}")
                     with z.open(file_name) as f:
                         file_bytes = f.read()
@@ -66,11 +65,31 @@ def download_files(files_url):
 
 def send_to_assistant(tender, docs_text):
     headers = {"Authorization": f"Bearer {GPTUNNEL_API_KEY}", "Content-Type": "application/json"}
+    
+    print(f"  🔑 Используем ключ: {GPTUNNEL_API_KEY[:10]}...")
+    print(f"  🤖 Assistant ID: {ASSISTANT_ID}")
+    
     try:
+        # Создаём thread
+        print(f"  📡 POST {GPTUNNEL_API_URL}/threads")
         r = requests.post(f"{GPTUNNEL_API_URL}/threads", headers=headers, json={}, timeout=15)
-        thread_id = r.json().get('id')
-        print(f"  🧵 Thread: {thread_id}")
         
+        print(f"  📡 Статус ответа: {r.status_code}")
+        print(f"  📡 Тело ответа: {r.text[:500]}")
+        
+        if r.status_code in [200, 201]:
+            try:
+                thread_id = r.json().get('id')
+                print(f"  🧵 Thread создан: {thread_id}")
+            except Exception as e:
+                print(f"  ❌ Не удалось распарсить JSON: {e}")
+                print(f"  ❌ Сырой ответ: {r.text}")
+                return
+        else:
+            print(f"  ❌ Ошибка создания thread: {r.status_code} - {r.text}")
+            return
+        
+        # Отправляем сообщение
         msg = f"""ТЕНДЕР № {tender.get('regNumber')}
 {tender.get('name')}
 Цена: {tender.get('beginPrice')} руб.
@@ -78,11 +97,36 @@ def send_to_assistant(tender, docs_text):
 ДОКУМЕНТАЦИЯ:
 {docs_text[:30000]}"""
         
-        requests.post(f"{GPTUNNEL_API_URL}/threads/{thread_id}/messages", headers=headers, json={"role": "user", "content": msg}, timeout=15)
-        requests.post(f"{GPTUNNEL_API_URL}/threads/{thread_id}/runs", headers=headers, json={"assistant_id": ASSISTANT_ID}, timeout=15)
-        print(f"  ✅ Отправлено в GPTunnel")
+        print(f"  📡 POST {GPTUNNEL_API_URL}/threads/{thread_id}/messages")
+        msg_r = requests.post(
+            f"{GPTUNNEL_API_URL}/threads/{thread_id}/messages",
+            headers=headers,
+            json={"role": "user", "content": msg},
+            timeout=15
+        )
+        print(f"  📡 Статус сообщения: {msg_r.status_code}")
+        if msg_r.status_code not in [200, 201]:
+            print(f"  ❌ Ошибка отправки сообщения: {msg_r.text}")
+            return
+        
+        # Запускаем ассистента
+        print(f"  📡 POST {GPTUNNEL_API_URL}/threads/{thread_id}/runs")
+        run_r = requests.post(
+            f"{GPTUNNEL_API_URL}/threads/{thread_id}/runs",
+            headers=headers,
+            json={"assistant_id": ASSISTANT_ID},
+            timeout=15
+        )
+        print(f"  📡 Статус запуска: {run_r.status_code}")
+        print(f"  📡 Тело ответа запуска: {run_r.text[:300]}")
+        
+        if run_r.status_code in [200, 201]:
+            print(f"  ✅ Отправлено в GPTunnel")
+        else:
+            print(f"  ❌ Ошибка запуска: {run_r.text}")
+            
     except Exception as e:
-        print(f"  ❌ Ошибка GPTunnel: {e}")
+        print(f"  ❌ Исключение: {type(e).__name__}: {e}")
 
 @app.route('/tenderland-webhook', methods=['POST', 'GET'])
 def webhook():
