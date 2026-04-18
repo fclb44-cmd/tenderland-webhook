@@ -9,6 +9,7 @@ import pandas as pd
 
 app = Flask(__name__)
 
+# ✅ ПРАВИЛЬНЫЕ КЛЮЧИ
 TENDERLAND_API_KEY = "shds-AKUw2n4Yd07oKft2HPxY3mGLZyd"
 GPTUNNEL_API_KEY = "f6290ba7-3284-46ea-bbe2-5999526a06f6"
 ASSISTANT_ID = "ai3834382"
@@ -88,8 +89,11 @@ def send_to_assistant(tender, docs_text):
     except Exception as e:
         print(f"  ❌ Ошибка GPTunnel: {e}")
 
-@app.route('/tenderland-webhook', methods=['POST'])
+@app.route('/tenderland-webhook', methods=['POST', 'GET'])
 def webhook():
+    if request.method == 'GET':
+        return jsonify({"статус": "ок"}), 200
+    
     print("\n" + "="*50)
     print("📨 ВЕБХУК ПОЛУЧЕН")
     
