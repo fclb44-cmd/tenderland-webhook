@@ -12,7 +12,6 @@ app = Flask(__name__)
 TENDERLAND_API_KEY = "shds-AKUw2n4Yd07oKft2HPxY3mGLZyd"
 GPTUNNEL_API_KEY = "f6290ba7-3284-46ea-bbe2-5999526a06f6"
 ASSISTANT_ID = "@ai3834382"
-GPTUNNEL_API_URL = "https://gptunnel.ru/v1"
 
 def extract_text(file_bytes, filename):
     text = ""
@@ -64,66 +63,43 @@ def download_files(files_url):
     return all_text
 
 def send_to_assistant(tender, docs_text):
-    headers = {"Authorization": f"Bearer {GPTUNNEL_API_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {GPTUNNEL_API_KEY}",
+        "Content-Type": "application/json"
+    }
     
-    print(f"  🔑 Используем ключ: {GPTUNNEL_API_KEY[:10]}...")
     print(f"  🤖 Assistant ID: {ASSISTANT_ID}")
     
-    try:
-        # Создаём thread
-        print(f"  📡 POST {GPTUNNEL_API_URL}/threads")
-        r = requests.post(f"{GPTUNNEL_API_URL}/threads", headers=headers, json={}, timeout=15)
-        
-        print(f"  📡 Статус ответа: {r.status_code}")
-        print(f"  📡 Тело ответа: {r.text[:500]}")
-        
-        if r.status_code in [200, 201]:
-            try:
-                thread_id = r.json().get('id')
-                print(f"  🧵 Thread создан: {thread_id}")
-            except Exception as e:
-                print(f"  ❌ Не удалось распарсить JSON: {e}")
-                print(f"  ❌ Сырой ответ: {r.text}")
-                return
-        else:
-            print(f"  ❌ Ошибка создания thread: {r.status_code} - {r.text}")
-            return
-        
-        # Отправляем сообщение
-        msg = f"""ТЕНДЕР № {tender.get('regNumber')}
+    # Формируем сообщение
+    msg = f"""ТЕНДЕР № {tender.get('regNumber')}
 {tender.get('name')}
 Цена: {tender.get('beginPrice')} руб.
 
 ДОКУМЕНТАЦИЯ:
 {docs_text[:30000]}"""
+    
+    # Правильный эндпоинт GPTunnel для ассистентов
+    url = f"https://gptunnel.ru/api/assistants/{ASSISTANT_ID}/chat"
+    
+    payload = {
+        "messages": [
+            {"role": "user", "content": msg}
+        ]
+    }
+    
+    print(f"  📡 POST {url}")
+    
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=60)
+        print(f"  📡 Статус: {r.status_code}")
+        print(f"  📡 Ответ: {r.text[:500]}")
         
-        print(f"  📡 POST {GPTUNNEL_API_URL}/threads/{thread_id}/messages")
-        msg_r = requests.post(
-            f"{GPTUNNEL_API_URL}/threads/{thread_id}/messages",
-            headers=headers,
-            json={"role": "user", "content": msg},
-            timeout=15
-        )
-        print(f"  📡 Статус сообщения: {msg_r.status_code}")
-        if msg_r.status_code not in [200, 201]:
-            print(f"  ❌ Ошибка отправки сообщения: {msg_r.text}")
-            return
-        
-        # Запускаем ассистента
-        print(f"  📡 POST {GPTUNNEL_API_URL}/threads/{thread_id}/runs")
-        run_r = requests.post(
-            f"{GPTUNNEL_API_URL}/threads/{thread_id}/runs",
-            headers=headers,
-            json={"assistant_id": ASSISTANT_ID},
-            timeout=15
-        )
-        print(f"  📡 Статус запуска: {run_r.status_code}")
-        print(f"  📡 Тело ответа запуска: {run_r.text[:300]}")
-        
-        if run_r.status_code in [200, 201]:
-            print(f"  ✅ Отправлено в GPTunnel")
+        if r.status_code == 200:
+            data = r.json()
+            reply = data.get('reply') or data.get('response') or data.get('message')
+            print(f"  ✅ Ответ ассистента: {reply[:300] if reply else 'Нет ответа'}")
         else:
-            print(f"  ❌ Ошибка запуска: {run_r.text}")
+            print(f"  ❌ Ошибка: {r.text}")
             
     except Exception as e:
         print(f"  ❌ Исключение: {type(e).__name__}: {e}")
