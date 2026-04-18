@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 TENDERLAND_API_KEY = "shds-AKUw2n4Yd07oKft2HPxY3mGLZyd"
 GPTUNNEL_API_KEY = "f6290ba7-3284-46ea-bbe2-5999526a06f6"
-ASSISTANT_ID = "ai3834382"
+ASSISTANT_ID = "@ai3834382"  # ← ДОБАВЛЕН @
 GPTUNNEL_API_URL = "https://gptunnel.ru/v1"
 
 def extract_text(file_bytes, filename):
