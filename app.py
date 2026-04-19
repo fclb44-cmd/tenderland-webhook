@@ -13,7 +13,7 @@ app = Flask(__name__)
 # ✅ ПРАВИЛЬНЫЕ КЛЮЧИ
 TENDERLAND_API_KEY = "f6290ba7-3284-46ea-bbe2-5999526a06f6"
 GPTUNNEL_API_KEY = "shds-AKUw2n4Yd07oKft2HPxY3mGLZyd"
-ASSISTANT_CODE = "@ai3834382"
+ASSISTANT_CODE = "ai3834382"  # без @
 
 def extract_text(file_bytes, filename):
     text = ""
