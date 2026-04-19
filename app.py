@@ -3,6 +3,7 @@ import json
 import requests
 import io
 import zipfile
+import uuid
 from PyPDF2 import PdfReader
 from docx import Document
 import pandas as pd
@@ -11,7 +12,7 @@ app = Flask(__name__)
 
 TENDERLAND_API_KEY = "shds-AKUw2n4Yd07oKft2HPxY3mGLZyd"
 GPTUNNEL_API_KEY = "f6290ba7-3284-46ea-bbe2-5999526a06f6"
-ASSISTANT_ID = "@ai3834382"
+ASSISTANT_CODE = "ai3834382"  # без @
 
 def extract_text(file_bytes, filename):
     text = ""
@@ -68,7 +69,8 @@ def send_to_assistant(tender, docs_text):
         "Content-Type": "application/json"
     }
     
-    print(f"  🤖 Assistant ID: {ASSISTANT_ID}")
+    # Генерируем уникальный chatId
+    chat_id = str(uuid.uuid4())
     
     # Формируем сообщение
     msg = f"""ТЕНДЕР № {tender.get('regNumber')}
@@ -78,28 +80,31 @@ def send_to_assistant(tender, docs_text):
 ДОКУМЕНТАЦИЯ:
 {docs_text[:30000]}"""
     
-    # Правильный эндпоинт GPTunnel для ассистентов
-    url = f"https://gptunnel.ru/api/assistants/{ASSISTANT_ID}/chat"
-    
     payload = {
-        "messages": [
-            {"role": "user", "content": msg}
-        ]
+        "chatId": chat_id,
+        "assistantCode": ASSISTANT_CODE,
+        "message": msg
     }
     
-    print(f"  📡 POST {url}")
+    print(f"  🤖 Assistant Code: {ASSISTANT_CODE}")
+    print(f"  🆔 Chat ID: {chat_id}")
+    print(f"  📡 POST https://gptunnel.ru/v1/assistant/chat")
     
     try:
-        r = requests.post(url, headers=headers, json=payload, timeout=60)
+        r = requests.post(
+            "https://gptunnel.ru/v1/assistant/chat",
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
         print(f"  📡 Статус: {r.status_code}")
-        print(f"  📡 Ответ: {r.text[:500]}")
         
         if r.status_code == 200:
             data = r.json()
-            reply = data.get('reply') or data.get('response') or data.get('message')
-            print(f"  ✅ Ответ ассистента: {reply[:300] if reply else 'Нет ответа'}")
+            reply = data.get('message', '')
+            print(f"  ✅ Ответ ассистента: {reply[:300]}")
         else:
-            print(f"  ❌ Ошибка: {r.text}")
+            print(f"  ❌ Ошибка: {r.text[:300]}")
             
     except Exception as e:
         print(f"  ❌ Исключение: {type(e).__name__}: {e}")
