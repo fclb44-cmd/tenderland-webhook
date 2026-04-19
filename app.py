@@ -10,9 +10,10 @@ import pandas as pd
 
 app = Flask(__name__)
 
-TENDERLAND_API_KEY = "shds-AKUw2n4Yd07oKft2HPxY3mGLZyd"
-GPTUNNEL_API_KEY = "f6290ba7-3284-46ea-bbe2-5999526a06f6"
-ASSISTANT_CODE = "ai3834382"  # без @
+# ✅ ПРАВИЛЬНЫЕ КЛЮЧИ
+TENDERLAND_API_KEY = "f6290ba7-3284-46ea-bbe2-5999526a06f6"
+GPTUNNEL_API_KEY = "shds-AKUw2n4Yd07oKft2HPxY3mGLZyd"
+ASSISTANT_CODE = "@ai3834382"
 
 def extract_text(file_bytes, filename):
     text = ""
@@ -69,10 +70,8 @@ def send_to_assistant(tender, docs_text):
         "Content-Type": "application/json"
     }
     
-    # Генерируем уникальный chatId
     chat_id = str(uuid.uuid4())
     
-    # Формируем сообщение
     msg = f"""ТЕНДЕР № {tender.get('regNumber')}
 {tender.get('name')}
 Цена: {tender.get('beginPrice')} руб.
