@@ -103,41 +103,6 @@ def call_assistant(assistant_code, message):
         print(f"  ❌ Исключение: {type(e).__name__}: {e}")
         return None
 
-def find_responsible_in_data(data):
-    """Поиск ответственного в данных Tenderland"""
-    possible_fields = [
-        'manager', 'Manager',
-        'responsible', 'Responsible',
-        'responsible_user', 'ResponsibleUser',
-        'owner', 'Owner',
-        'assigned_to', 'AssignedTo',
-        'manager_id', 'ManagerId',
-        'manager_name', 'ManagerName'
-    ]
-    
-    # Поиск в корне
-    for field in possible_fields:
-        if field in data:
-            return data[field]
-    
-    # Рекурсивный поиск
-    def search(obj):
-        if isinstance(obj, dict):
-            for key, value in obj.items():
-                if key.lower() in [f.lower() for f in possible_fields]:
-                    return value
-                result = search(value)
-                if result:
-                    return result
-        elif isinstance(obj, list):
-            for item in obj:
-                result = search(item)
-                if result:
-                    return result
-        return None
-    
-    return search(data)
-
 @app.route('/tenderland-webhook', methods=['POST', 'GET'])
 def webhook():
     if request.method == 'GET':
@@ -147,39 +112,8 @@ def webhook():
     print("📨 ВЕБХУК ПОЛУЧЕН")
     
     data = request.json
-    
-    # ============================================================
-    # 🔍 ПРОВЕРКА НАЛИЧИЯ ОТВЕТСТВЕННОГО
-    # ============================================================
-    print("\n🔍 ПОИСК ОТВЕТСТВЕННОГО В ВЕБХУКЕ:")
-    print("-" * 40)
-    
-    responsible = find_responsible_in_data(data)
-    
-    if responsible:
-        print(f"✅ ОТВЕТСТВЕННЫЙ НАЙДЕН: {responsible}")
-    else:
-        print("❌ ОТВЕТСТВЕННЫЙ НЕ НАЙДЕН")
-        print("\n📋 КЛЮЧИ В КОРНЕ JSON:")
-        for key in list(data.keys())[:10]:
-            print(f"   - {key}")
-        
-        if 'items' in data and data['items']:
-            item = data['items'][0]
-            print("\n📋 КЛЮЧИ В items[0]:")
-            for key in list(item.keys())[:10]:
-                print(f"   - {key}")
-            
-            if 'tender' in item:
-                print("\n📋 КЛЮЧИ В items[0]['tender']:")
-                tender = item['tender']
-                for key in list(tender.keys())[:15]:
-                    print(f"   - {key}")
-    
-    print("-" * 40)
-    
     items = data.get('items', [])
-    print(f"\n📦 Тендеров: {len(items)}")
+    print(f"📦 Тендеров: {len(items)}")
     
     if items:
         item = items[0]
@@ -196,18 +130,27 @@ def webhook():
                 print(f"   📄 Текст: {len(docs_text)} симв.")
                 
                 # Отправка СПЕКТРу
-                print(f"\n🔵 СПЕКТР:")
+                print(f"\n🔵 СПЕКТР (@ai3834382):")
                 spektr_response = call_assistant(
                     ASSISTANT_CODE_SPEKTR,
-                    f"Проанализируй тендерную документацию:\n\n{docs_text[:30000]}"
+                    f"Проанализируй тендерную документацию и подбери модели:\n\n{docs_text[:30000]}"
                 )
                 
                 # Отправка МАРКу
-                print(f"\n🟢 МАРК:")
+                print(f"\n🟢 МАРК (@ai5744545):")
                 mark_response = call_assistant(
                     ASSISTANT_CODE_MARK,
                     f"Заполни чек-лист по документации:\n\n{docs_text[:30000]}"
                 )
+                
+                # Здесь можно сохранить ответы или отправить в Нейроофис
+                if spektr_response:
+                    print(f"\n📊 ОТВЕТ СПЕКТРА (первые 500 симв.):")
+                    print(spektr_response[:500])
+                
+                if mark_response:
+                    print(f"\n📋 ОТВЕТ МАРКА (первые 500 симв.):")
+                    print(mark_response[:500])
     
     print("\n" + "="*50)
     return jsonify({"статус": "ок"}), 200
