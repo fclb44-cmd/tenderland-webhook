@@ -10,10 +10,10 @@ import pandas as pd
 
 app = Flask(__name__)
 
-# ✅ ПРАВИЛЬНЫЕ КЛЮЧИ
 TENDERLAND_API_KEY = "f6290ba7-3284-46ea-bbe2-5999526a06f6"
 GPTUNNEL_API_KEY = "shds-AKUw2n4Yd07oKft2HPxY3mGLZyd"
-ASSISTANT_CODE = "ai3834382"  # без @
+ASSISTANT_CODE_SPEKTR = "ai3834382"
+ASSISTANT_CODE_MARK = "ai5744545"
 
 def extract_text(file_bytes, filename):
     text = ""
@@ -64,7 +64,7 @@ def download_files(files_url):
         print(f"  ❌ Ошибка: {e}")
     return all_text
 
-def send_to_assistant(tender, docs_text):
+def call_assistant(assistant_code, message):
     headers = {
         "Authorization": f"Bearer {GPTUNNEL_API_KEY}",
         "Content-Type": "application/json"
@@ -72,22 +72,14 @@ def send_to_assistant(tender, docs_text):
     
     chat_id = str(uuid.uuid4())
     
-    msg = f"""ТЕНДЕР № {tender.get('regNumber')}
-{tender.get('name')}
-Цена: {tender.get('beginPrice')} руб.
-
-ДОКУМЕНТАЦИЯ:
-{docs_text[:30000]}"""
-    
     payload = {
         "chatId": chat_id,
-        "assistantCode": ASSISTANT_CODE,
-        "message": msg
+        "assistantCode": assistant_code,
+        "message": message
     }
     
-    print(f"  🤖 Assistant Code: {ASSISTANT_CODE}")
+    print(f"  🤖 Assistant: {assistant_code}")
     print(f"  🆔 Chat ID: {chat_id}")
-    print(f"  📡 POST https://gptunnel.ru/v1/assistant/chat")
     
     try:
         r = requests.post(
@@ -101,12 +93,50 @@ def send_to_assistant(tender, docs_text):
         if r.status_code == 200:
             data = r.json()
             reply = data.get('message', '')
-            print(f"  ✅ Ответ ассистента: {reply[:300]}")
+            print(f"  ✅ Ответ получен ({len(reply)} симв.)")
+            return reply
         else:
             print(f"  ❌ Ошибка: {r.text[:300]}")
+            return None
             
     except Exception as e:
         print(f"  ❌ Исключение: {type(e).__name__}: {e}")
+        return None
+
+def find_responsible_in_data(data):
+    """Поиск ответственного в данных Tenderland"""
+    possible_fields = [
+        'manager', 'Manager',
+        'responsible', 'Responsible',
+        'responsible_user', 'ResponsibleUser',
+        'owner', 'Owner',
+        'assigned_to', 'AssignedTo',
+        'manager_id', 'ManagerId',
+        'manager_name', 'ManagerName'
+    ]
+    
+    # Поиск в корне
+    for field in possible_fields:
+        if field in data:
+            return data[field]
+    
+    # Рекурсивный поиск
+    def search(obj):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if key.lower() in [f.lower() for f in possible_fields]:
+                    return value
+                result = search(value)
+                if result:
+                    return result
+        elif isinstance(obj, list):
+            for item in obj:
+                result = search(item)
+                if result:
+                    return result
+        return None
+    
+    return search(data)
 
 @app.route('/tenderland-webhook', methods=['POST', 'GET'])
 def webhook():
@@ -117,15 +147,46 @@ def webhook():
     print("📨 ВЕБХУК ПОЛУЧЕН")
     
     data = request.json
+    
+    # ============================================================
+    # 🔍 ПРОВЕРКА НАЛИЧИЯ ОТВЕТСТВЕННОГО
+    # ============================================================
+    print("\n🔍 ПОИСК ОТВЕТСТВЕННОГО В ВЕБХУКЕ:")
+    print("-" * 40)
+    
+    responsible = find_responsible_in_data(data)
+    
+    if responsible:
+        print(f"✅ ОТВЕТСТВЕННЫЙ НАЙДЕН: {responsible}")
+    else:
+        print("❌ ОТВЕТСТВЕННЫЙ НЕ НАЙДЕН")
+        print("\n📋 КЛЮЧИ В КОРНЕ JSON:")
+        for key in list(data.keys())[:10]:
+            print(f"   - {key}")
+        
+        if 'items' in data and data['items']:
+            item = data['items'][0]
+            print("\n📋 КЛЮЧИ В items[0]:")
+            for key in list(item.keys())[:10]:
+                print(f"   - {key}")
+            
+            if 'tender' in item:
+                print("\n📋 КЛЮЧИ В items[0]['tender']:")
+                tender = item['tender']
+                for key in list(tender.keys())[:15]:
+                    print(f"   - {key}")
+    
+    print("-" * 40)
+    
     items = data.get('items', [])
-    print(f"📦 Тендеров: {len(items)}")
+    print(f"\n📦 Тендеров: {len(items)}")
     
     if items:
         item = items[0]
         tender = item.get('tender', {})
         files_url = tender.get('files')
         
-        print(f"📋 {tender.get('regNumber')}")
+        print(f"\n📋 {tender.get('regNumber')}")
         print(f"   {tender.get('name')[:60]}...")
         
         if files_url:
@@ -133,9 +194,22 @@ def webhook():
             docs_text = download_files(files_url)
             if docs_text:
                 print(f"   📄 Текст: {len(docs_text)} симв.")
-                send_to_assistant(tender, docs_text)
+                
+                # Отправка СПЕКТРу
+                print(f"\n🔵 СПЕКТР:")
+                spektr_response = call_assistant(
+                    ASSISTANT_CODE_SPEKTR,
+                    f"Проанализируй тендерную документацию:\n\n{docs_text[:30000]}"
+                )
+                
+                # Отправка МАРКу
+                print(f"\n🟢 МАРК:")
+                mark_response = call_assistant(
+                    ASSISTANT_CODE_MARK,
+                    f"Заполни чек-лист по документации:\n\n{docs_text[:30000]}"
+                )
     
-    print("="*50)
+    print("\n" + "="*50)
     return jsonify({"статус": "ок"}), 200
 
 if __name__ == '__main__':
